@@ -100,6 +100,10 @@ NS_ASSUME_NONNULL_BEGIN
 /**
  The run loop modes in which the operation will run on the network thread. By default, this is a single-member set containing `NSRunLoopCommonModes`.
  */
+
+/**
+ * 默认为NSRunLoopCommonModes
+ */
 @property (nonatomic, strong) NSSet *runLoopModes;
 
 ///-----------------------------------------
@@ -114,6 +118,7 @@ NS_ASSUME_NONNULL_BEGIN
 /**
  The last response received by the operation's connection.
  */
+// 最后一个NSURLResponse，因为重定向会收到多个connection:didReceiveResponse:
 @property (readonly, nonatomic, strong, nullable) NSURLResponse *response;
 
 /**
@@ -151,6 +156,7 @@ NS_ASSUME_NONNULL_BEGIN
 
  This is the value that is returned in the `NSURLConnectionDelegate` method `-connectionShouldUseCredentialStorage:`.
  */
+
 @property (nonatomic, assign) BOOL shouldUseCredentialStorage;
 
 /**
@@ -255,6 +261,8 @@ NS_ASSUME_NONNULL_BEGIN
 
  Pause/Resume behavior varies depending on the underlying implementation for the operation class. In its base implementation, resuming a paused requests restarts the original request. However, since HTTP defines a specification for how to request a specific content range, `AFHTTPRequestOperation` will resume downloading the request from where it left off, instead of restarting the original request.
  */
+
+// 恢复操作，这里重新调用start，通过设置header的range发起request，
 - (void)resume;
 
 ///----------------------------------------------
@@ -266,6 +274,8 @@ NS_ASSUME_NONNULL_BEGIN
 
  @param handler A handler to be called shortly before the application’s remaining background time reaches 0. The handler is wrapped in a block that cancels the operation, and cleans up and marks the end of execution, unlike the `handler` parameter in `UIApplication -beginBackgroundTaskWithExpirationHandler:`, which expects this to be done in the handler itself. The handler is called synchronously on the main thread, thus blocking the application’s suspension momentarily while the application is notified.
   */
+
+// 设置是否需要进入后台取消操作
 #if defined(__IPHONE_OS_VERSION_MIN_REQUIRED)
 - (void)setShouldExecuteAsBackgroundTaskWithExpirationHandler:(nullable void (^)(void))handler NS_EXTENSION_UNAVAILABLE_IOS("Not available in app extensions.");
 #endif

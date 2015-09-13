@@ -32,6 +32,7 @@ NSString * const AFNetworkingOperationFailingURLRequestErrorKey = @"com.alamofir
 
 typedef NSString * (^AFQueryStringSerializationBlock)(NSURLRequest *request, id parameters, NSError *__autoreleasing *error);
 
+// Base64字符串编码
 static NSString * AFBase64EncodedStringFromString(NSString *string) {
     NSData *data = [NSData dataWithBytes:[string UTF8String] length:[string lengthOfBytesUsingEncoding:NSUTF8StringEncoding]];
     NSUInteger length = [data length];
@@ -73,6 +74,8 @@ static NSString * AFBase64EncodedStringFromString(NSString *string) {
     - parameter string: The string to be percent-escaped.
     - returns: The percent-escaped string.
  */
+
+// 正则表达式处理string
 static NSString * AFPercentEscapedStringFromString(NSString *string) {
     static NSString * const kAFCharactersGeneralDelimitersToEncode = @":#[]@"; // does not include "?" or "/" due to RFC 3986 - Section 3.4
     static NSString * const kAFCharactersSubDelimitersToEncode = @"!$&'()*+,;=";
@@ -84,7 +87,9 @@ static NSString * AFPercentEscapedStringFromString(NSString *string) {
 }
 
 #pragma mark -
+#pragma mark - AFQueryStringPair Class
 
+// 参数对类
 @interface AFQueryStringPair : NSObject
 @property (readwrite, nonatomic, strong) id field;
 @property (readwrite, nonatomic, strong) id value;
@@ -101,17 +106,21 @@ static NSString * AFPercentEscapedStringFromString(NSString *string) {
     if (!self) {
         return nil;
     }
-
+    // key
     self.field = field;
+    // value
     self.value = value;
 
     return self;
 }
 
+// 返回拼接后的字符串，形式为key=value
 - (NSString *)URLEncodedStringValue {
-    if (!self.value || [self.value isEqual:[NSNull null]]) {
+    if (!self.value || [self.value isEqual:[NSNull null]]) { // 如果value为nil或者是NSNull class
+        // 正则表达式做一些处理
         return AFPercentEscapedStringFromString([self.field description]);
     } else {
+        // 正则表达式处理后拼接成形式len=20
         return [NSString stringWithFormat:@"%@=%@", AFPercentEscapedStringFromString([self.field description]), AFPercentEscapedStringFromString([self.value description])];
     }
 }
@@ -123,12 +132,16 @@ static NSString * AFPercentEscapedStringFromString(NSString *string) {
 extern NSArray * AFQueryStringPairsFromDictionary(NSDictionary *dictionary);
 extern NSArray * AFQueryStringPairsFromKeyAndValue(NSString *key, id value);
 
+// 拼接body体字符串
 static NSString * AFQueryStringFromParameters(NSDictionary *parameters) {
     NSMutableArray *mutablePairs = [NSMutableArray array];
+    // 遍历参数对类
     for (AFQueryStringPair *pair in AFQueryStringPairsFromDictionary(parameters)) {
+        // 数组添加key=value形式的字符串
         [mutablePairs addObject:[pair URLEncodedStringValue]];
     }
-
+    // 返回字符串
+    // 最后的形式为len=20&token=c8d95373b1b621db7ea9ab86bfb4f3b5&type=0
     return [mutablePairs componentsJoinedByString:@"&"];
 }
 
@@ -136,39 +149,46 @@ NSArray * AFQueryStringPairsFromDictionary(NSDictionary *dictionary) {
     return AFQueryStringPairsFromKeyAndValue(nil, dictionary);
 }
 
+// 递归参数（这里value为字典）
 NSArray * AFQueryStringPairsFromKeyAndValue(NSString *key, id value) {
     NSMutableArray *mutableQueryStringComponents = [NSMutableArray array];
 
     NSSortDescriptor *sortDescriptor = [NSSortDescriptor sortDescriptorWithKey:@"description" ascending:YES selector:@selector(compare:)];
-
-    if ([value isKindOfClass:[NSDictionary class]]) {
+    // 判断类型
+    if ([value isKindOfClass:[NSDictionary class]]) {   // 如果参数是以字典形式
         NSDictionary *dictionary = value;
         // Sort dictionary keys to ensure consistent ordering in query string, which is important when deserializing potentially ambiguous sequences, such as an array of dictionaries
+        // 先将字典key以首字母顺序排序
         for (id nestedKey in [dictionary.allKeys sortedArrayUsingDescriptors:@[ sortDescriptor ]]) {
             id nestedValue = dictionary[nestedKey];
-            if (nestedValue) {
+            if (nestedValue) {  // nestedValue不为空
+                // 递归调用
                 [mutableQueryStringComponents addObjectsFromArray:AFQueryStringPairsFromKeyAndValue((key ? [NSString stringWithFormat:@"%@[%@]", key, nestedKey] : nestedKey), nestedValue)];
             }
         }
-    } else if ([value isKindOfClass:[NSArray class]]) {
+    } else if ([value isKindOfClass:[NSArray class]]) {  // 数组形式
         NSArray *array = value;
         for (id nestedValue in array) {
             [mutableQueryStringComponents addObjectsFromArray:AFQueryStringPairsFromKeyAndValue([NSString stringWithFormat:@"%@[]", key], nestedValue)];
         }
-    } else if ([value isKindOfClass:[NSSet class]]) {
+    } else if ([value isKindOfClass:[NSSet class]]) {    // 集合形式
         NSSet *set = value;
         for (id obj in [set sortedArrayUsingDescriptors:@[ sortDescriptor ]]) {
             [mutableQueryStringComponents addObjectsFromArray:AFQueryStringPairsFromKeyAndValue(key, obj)];
         }
     } else {
+        // 最后如果不是字典数组集合了，添加进数组
         [mutableQueryStringComponents addObject:[[AFQueryStringPair alloc] initWithField:key value:value]];
     }
 
     return mutableQueryStringComponents;
 }
 
-#pragma mark -
+//////////////////////////////////////////////////////////////////
 
+#pragma mark -
+#pragma mark - define AFStreamingMultipartFormData
+// multipart数据流class，遵循AFMultipartFormData协议
 @interface AFStreamingMultipartFormData : NSObject <AFMultipartFormData>
 - (instancetype)initWithURLRequest:(NSMutableURLRequest *)urlRequest
                     stringEncoding:(NSStringEncoding)encoding;
@@ -176,12 +196,16 @@ NSArray * AFQueryStringPairsFromKeyAndValue(NSString *key, id value) {
 - (NSMutableURLRequest *)requestByFinalizingMultipartFormData;
 @end
 
+//////////////////////////////////////////////////////////////////
+
 #pragma mark -
 
+// KVO观察数组
 static NSArray * AFHTTPRequestSerializerObservedKeyPaths() {
     static NSArray *_AFHTTPRequestSerializerObservedKeyPaths = nil;
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
+        // 观察allowsCellularAccess、cachePolicy、HTTPShouldHandleCookies、HTTPShouldUsePipelining、networkServiceType、timeoutInterval
         _AFHTTPRequestSerializerObservedKeyPaths = @[NSStringFromSelector(@selector(allowsCellularAccess)), NSStringFromSelector(@selector(cachePolicy)), NSStringFromSelector(@selector(HTTPShouldHandleCookies)), NSStringFromSelector(@selector(HTTPShouldUsePipelining)), NSStringFromSelector(@selector(networkServiceType)), NSStringFromSelector(@selector(timeoutInterval))];
     });
 
@@ -190,10 +214,16 @@ static NSArray * AFHTTPRequestSerializerObservedKeyPaths() {
 
 static void *AFHTTPRequestSerializerObserverContext = &AFHTTPRequestSerializerObserverContext;
 
+//////////////////////////////////////////////////////////////////
+
+// AFHTTPRequestSerializer，HTTP请求序列化
 @interface AFHTTPRequestSerializer ()
 @property (readwrite, nonatomic, strong) NSMutableSet *mutableObservedChangedKeyPaths;
+// http请求头字典
 @property (readwrite, nonatomic, strong) NSMutableDictionary *mutableHTTPRequestHeaders;
+// 序列化style
 @property (readwrite, nonatomic, assign) AFHTTPRequestQueryStringSerializationStyle queryStringSerializationStyle;
+// 自定义序列化block
 @property (readwrite, nonatomic, copy) AFQueryStringSerializationBlock queryStringSerialization;
 @end
 
@@ -209,8 +239,9 @@ static void *AFHTTPRequestSerializerObserverContext = &AFHTTPRequestSerializerOb
         return nil;
     }
 
+    // 编码类型
     self.stringEncoding = NSUTF8StringEncoding;
-
+    // 可变的http请求头字典
     self.mutableHTTPRequestHeaders = [NSMutableDictionary dictionary];
 
     // Accept-Language HTTP Header; see http://www.w3.org/Protocols/rfc2616/rfc2616-sec14.html#sec14.4
@@ -220,6 +251,7 @@ static void *AFHTTPRequestSerializerObserverContext = &AFHTTPRequestSerializerOb
         [acceptLanguagesComponents addObject:[NSString stringWithFormat:@"%@;q=%0.1g", obj, q]];
         *stop = q <= 0.5f;
     }];
+    // 设置请求头之Accept-Language
     [self setValue:[acceptLanguagesComponents componentsJoinedByString:@", "] forHTTPHeaderField:@"Accept-Language"];
 
     NSString *userAgent = nil;
@@ -242,13 +274,17 @@ static void *AFHTTPRequestSerializerObserverContext = &AFHTTPRequestSerializerOb
                 userAgent = mutableUserAgent;
             }
         }
+        // 设置请求头之User-Agent用户代理
         [self setValue:userAgent forHTTPHeaderField:@"User-Agent"];
     }
 
     // HTTP Method Definitions; see http://www.w3.org/Protocols/rfc2616/rfc2616-sec9.html
+    // 需要字符串格式(len=20&token=c8d95373b1b621db7ea9ab86bfb4f3b5&type=0的形式)拼接在URL后面的有三个方法，GET、HEAD、DELETE
     self.HTTPMethodsEncodingParametersInURI = [NSSet setWithObjects:@"GET", @"HEAD", @"DELETE", nil];
-
+    // 初始化观察的key set
     self.mutableObservedChangedKeyPaths = [NSMutableSet set];
+    
+    // 添加KVO观察
     for (NSString *keyPath in AFHTTPRequestSerializerObservedKeyPaths()) {
         if ([self respondsToSelector:NSSelectorFromString(keyPath)]) {
             [self addObserver:self forKeyPath:keyPath options:NSKeyValueObservingOptionNew context:AFHTTPRequestSerializerObserverContext];
@@ -259,6 +295,7 @@ static void *AFHTTPRequestSerializerObserverContext = &AFHTTPRequestSerializerOb
 }
 
 - (void)dealloc {
+    // 移除KVO观察
     for (NSString *keyPath in AFHTTPRequestSerializerObservedKeyPaths()) {
         if ([self respondsToSelector:NSSelectorFromString(keyPath)]) {
             [self removeObserver:self forKeyPath:keyPath context:AFHTTPRequestSerializerObserverContext];
@@ -270,6 +307,8 @@ static void *AFHTTPRequestSerializerObserverContext = &AFHTTPRequestSerializerOb
 
 // Workarounds for crashing behavior using Key-Value Observing with XCTest
 // See https://github.com/AFNetworking/AFNetworking/issues/2523
+
+// Setters并且发送KVO消息
 
 - (void)setAllowsCellularAccess:(BOOL)allowsCellularAccess {
     [self willChangeValueForKey:NSStringFromSelector(@selector(allowsCellularAccess))];
@@ -308,21 +347,26 @@ static void *AFHTTPRequestSerializerObserverContext = &AFHTTPRequestSerializerOb
 }
 
 #pragma mark -
+#pragma mark - Setters and getters for headers
 
+// 返回请求头全部信息
 - (NSDictionary *)HTTPRequestHeaders {
     return [NSDictionary dictionaryWithDictionary:self.mutableHTTPRequestHeaders];
 }
 
+// 设置请求头
 - (void)setValue:(NSString *)value
 forHTTPHeaderField:(NSString *)field
 {
 	[self.mutableHTTPRequestHeaders setValue:value forKey:field];
 }
 
+// 获取请求头信息
 - (NSString *)valueForHTTPHeaderField:(NSString *)field {
     return [self.mutableHTTPRequestHeaders valueForKey:field];
 }
 
+// 设置Authorization：username and password并且base64编码
 - (void)setAuthorizationHeaderFieldWithUsername:(NSString *)username
                                        password:(NSString *)password
 {
@@ -330,10 +374,12 @@ forHTTPHeaderField:(NSString *)field
     [self setValue:[NSString stringWithFormat:@"Basic %@", AFBase64EncodedStringFromString(basicAuthCredentials)] forHTTPHeaderField:@"Authorization"];
 }
 
+// 设置Authorization：token
 - (void)setAuthorizationHeaderFieldWithToken:(NSString *)token {
     [self setValue:[NSString stringWithFormat:@"Token token=\"%@\"", token] forHTTPHeaderField:@"Authorization"];
 }
 
+// 清除Authorization
 - (void)clearAuthorizationHeader {
 	[self.mutableHTTPRequestHeaders removeObjectForKey:@"Authorization"];
 }
@@ -358,10 +404,12 @@ forHTTPHeaderField:(NSString *)field
     return [self requestWithMethod:method URLString:URLString parameters:parameters error:nil];
 }
 
+// 普通表单请求
+// Content-Type: application/x-www-form-urlencoded
 - (NSMutableURLRequest *)requestWithMethod:(NSString *)method
                                  URLString:(NSString *)URLString
                                 parameters:(id)parameters
-                                     error:(NSError *__autoreleasing *)error
+                                     error:(NSError *__autoreleasing *)error //注意 这里是__autoreleasing，传入的error为nil，表示error在方法中实例化
 {
     NSParameterAssert(method);
     NSParameterAssert(URLString);
@@ -371,6 +419,7 @@ forHTTPHeaderField:(NSString *)field
     NSParameterAssert(url);
 
     NSMutableURLRequest *mutableRequest = [[NSMutableURLRequest alloc] initWithURL:url];
+    // 设置请求方法
     mutableRequest.HTTPMethod = method;
 
     for (NSString *keyPath in AFHTTPRequestSerializerObservedKeyPaths()) {
@@ -379,8 +428,9 @@ forHTTPHeaderField:(NSString *)field
         }
     }
 
+    // 设置request的header、body、url等，返回request
     mutableRequest = [[self requestBySerializingRequest:mutableRequest withParameters:parameters error:error] mutableCopy];
-
+    // 返回request
 	return mutableRequest;
 }
 
@@ -392,6 +442,8 @@ forHTTPHeaderField:(NSString *)field
     return [self multipartFormRequestWithMethod:method URLString:URLString parameters:parameters constructingBodyWithBlock:block error:nil];
 }
 
+// multipart请求
+// Content-Type: multipart/form-data
 - (NSMutableURLRequest *)multipartFormRequestWithMethod:(NSString *)method
                                               URLString:(NSString *)URLString
                                              parameters:(NSDictionary *)parameters
@@ -399,13 +451,17 @@ forHTTPHeaderField:(NSString *)field
                                                   error:(NSError *__autoreleasing *)error
 {
     NSParameterAssert(method);
+    // multipart请求不能为GET或HEAD
     NSParameterAssert(![method isEqualToString:@"GET"] && ![method isEqualToString:@"HEAD"]);
 
+    // 先调用普通请求设置request
     NSMutableURLRequest *mutableRequest = [self requestWithMethod:method URLString:URLString parameters:nil error:error];
 
+    // multipart数据流，初始化参数为NSMutableURLRequest和编码方式NSUTF8StringEncoding
     __block AFStreamingMultipartFormData *formData = [[AFStreamingMultipartFormData alloc] initWithURLRequest:mutableRequest stringEncoding:NSUTF8StringEncoding];
 
-    if (parameters) {
+    if (parameters) {       // 如果有参数
+        // 遍历参数对类
         for (AFQueryStringPair *pair in AFQueryStringPairsFromDictionary(parameters)) {
             NSData *data = nil;
             if ([pair.value isKindOfClass:[NSData class]]) {
@@ -426,6 +482,7 @@ forHTTPHeaderField:(NSString *)field
         block(formData);
     }
 
+    // 请求最后的部分数据，为multipart请求设置Content-Type和Content-Length
     return [formData requestByFinalizingMultipartFormData];
 }
 
@@ -484,7 +541,7 @@ forHTTPHeaderField:(NSString *)field
 }
 
 #pragma mark - AFURLRequestSerialization
-
+// 设置request的header、body、url等
 - (NSURLRequest *)requestBySerializingRequest:(NSURLRequest *)request
                                withParameters:(id)parameters
                                         error:(NSError *__autoreleasing *)error
@@ -493,20 +550,23 @@ forHTTPHeaderField:(NSString *)field
 
     NSMutableURLRequest *mutableRequest = [request mutableCopy];
 
+    // 枚举头部字典
     [self.HTTPRequestHeaders enumerateKeysAndObjectsUsingBlock:^(id field, id value, BOOL * __unused stop) {
         if (![request valueForHTTPHeaderField:field]) {
+            // 设置request的请求头
             [mutableRequest setValue:value forHTTPHeaderField:field];
         }
     }];
 
-    if (parameters) {
+    if (parameters) {       // 如果有参数
         NSString *query = nil;
-        if (self.queryStringSerialization) {
+        if (self.queryStringSerialization) { // 自定义参数处理block
             NSError *serializationError;
             query = self.queryStringSerialization(request, parameters, &serializationError);
 
             if (serializationError) {
                 if (error) {
+                    // 发生错误
                     *error = serializationError;
                 }
 
@@ -515,17 +575,23 @@ forHTTPHeaderField:(NSString *)field
         } else {
             switch (self.queryStringSerializationStyle) {
                 case AFHTTPRequestQueryStringDefaultStyle:
+                    // 默认stytle，拼接成len=20&token=c8d95373b1b621db7ea9ab86bfb4f3b5&type=0的形式
                     query = AFQueryStringFromParameters(parameters);
                     break;
             }
         }
 
+        // 请求方法为GET、HEAD、DELETE之一
         if ([self.HTTPMethodsEncodingParametersInURI containsObject:[[request HTTPMethod] uppercaseString]]) {
+            // 拼接在URL后面
             mutableRequest.URL = [NSURL URLWithString:[[mutableRequest.URL absoluteString] stringByAppendingFormat:mutableRequest.URL.query ? @"&%@" : @"?%@", query]];
-        } else {
+        } else {          // 请求方法为POST等其他请求
+            // 没有设置Content-Type
             if (![mutableRequest valueForHTTPHeaderField:@"Content-Type"]) {
+                // 设置默认为表单类型application/x-www-form-urlencoded
                 [mutableRequest setValue:@"application/x-www-form-urlencoded" forHTTPHeaderField:@"Content-Type"];
             }
+            // 将请求数据放在请求体中
             [mutableRequest setHTTPBody:[query dataUsingEncoding:self.stringEncoding]];
         }
     }
@@ -593,26 +659,34 @@ forHTTPHeaderField:(NSString *)field
 
 @end
 
+//////////////////////////////////////////////////////////////////
+
 #pragma mark -
 
+// multipart Content-Type组成
 static NSString * AFCreateMultipartFormBoundary() {
+    // "Content-Type" = "multipart/form-data; boundary=Boundary+5932731645BA9145"
     return [NSString stringWithFormat:@"Boundary+%08X%08X", arc4random(), arc4random()];
 }
 
+// HTML协议中的换行
 static NSString * const kAFMultipartFormCRLF = @"\r\n";
 
+// 头 --Boundary+4B165663A46288B9
 static inline NSString * AFMultipartFormInitialBoundary(NSString *boundary) {
     return [NSString stringWithFormat:@"--%@%@", boundary, kAFMultipartFormCRLF];
 }
 
+// 中间
 static inline NSString * AFMultipartFormEncapsulationBoundary(NSString *boundary) {
     return [NSString stringWithFormat:@"%@--%@%@", kAFMultipartFormCRLF, boundary, kAFMultipartFormCRLF];
 }
-
+// 尾 --Boundary+4B165663A46288B9--
 static inline NSString * AFMultipartFormFinalBoundary(NSString *boundary) {
     return [NSString stringWithFormat:@"%@--%@--%@", kAFMultipartFormCRLF, boundary, kAFMultipartFormCRLF];
 }
 
+// 根据文件后缀名确定content-type
 static inline NSString * AFContentTypeForPathExtension(NSString *extension) {
 #ifdef __UTTYPE__
     NSString *UTI = (__bridge_transfer NSString *)UTTypeCreatePreferredIdentifierForTag(kUTTagClassFilenameExtension, (__bridge CFStringRef)extension, NULL);
@@ -631,24 +705,41 @@ static inline NSString * AFContentTypeForPathExtension(NSString *extension) {
 NSUInteger const kAFUploadStream3GSuggestedPacketSize = 1024 * 16;
 NSTimeInterval const kAFUploadStream3GSuggestedDelay = 0.2;
 
+//////////////////////////////////////////////////////////////////
+
+#pragma mark -
+#pragma mark - AFHTTPBodyPart
+
+// AFHTTPBodyPart: multipart/form-data类型请求体的封装
 @interface AFHTTPBodyPart : NSObject
+// 编码方式
 @property (nonatomic, assign) NSStringEncoding stringEncoding;
+// HTTP请求头
 @property (nonatomic, strong) NSDictionary *headers;
+// boundary，用来隔开表单中不同部分的数据
+// "Content-Type" = "multipart/form-data; boundary=Boundary+5932731645BA9145"
 @property (nonatomic, copy) NSString *boundary;
+// body，可能为fileURL或data或数据流
 @property (nonatomic, strong) id body;
+//
 @property (nonatomic, assign) unsigned long long bodyContentLength;
+// 输入流
 @property (nonatomic, strong) NSInputStream *inputStream;
 
 @property (nonatomic, assign) BOOL hasInitialBoundary;
 @property (nonatomic, assign) BOOL hasFinalBoundary;
 
 @property (readonly, nonatomic, assign, getter = hasBytesAvailable) BOOL bytesAvailable;
+// contentLength，响应消息的实体内容的长度
 @property (readonly, nonatomic, assign) unsigned long long contentLength;
 
 - (NSInteger)read:(uint8_t *)buffer
         maxLength:(NSUInteger)length;
 @end
 
+////////////////////////////AFMultipartBodyStream//////////////////////////////////////
+
+// Multipart Body Stream Class
 @interface AFMultipartBodyStream : NSInputStream <NSStreamDelegate>
 @property (nonatomic, assign) NSUInteger numberOfBytesInPacket;
 @property (nonatomic, assign) NSTimeInterval delay;
@@ -657,21 +748,60 @@ NSTimeInterval const kAFUploadStream3GSuggestedDelay = 0.2;
 @property (readonly, nonatomic, assign, getter = isEmpty) BOOL empty;
 
 - (id)initWithStringEncoding:(NSStringEncoding)encoding;
+// 设置最初和结束的boundary
 - (void)setInitialAndFinalBoundaries;
+// 添加进bodyPart到body体数组
 - (void)appendHTTPBodyPart:(AFHTTPBodyPart *)bodyPart;
 @end
 
+////////////////////////////AFStreamingMultipartFormData//////////////////////////////////////
+
 #pragma mark -
+#pragma mark - AFStreamingMultipartFormData Extention
+// multipart数据流class，遵循AFMultipartFormData协议
+
+/*
+multipart/form-data与post方法的不同之处：请求头，请求体。
+multipart/form-data的请求头必须包含一个特殊的头信息：Content-Type，且其值也必须规定为multipart/form-data，同时还需要规定一个内容分割符用于分割请求体中的多个post的内容，如文件内容和文本内容自然需要分割开来，不然接收方就无法正常解析和还原这个文件了。具体的头信息如下：
+Content-Type: multipart/form-data; boundary=${bound}
+//其中${bound} 是一个占位符，代表我们规定的分割符，可以自己任意规定，但为了避免和正常文本重复了，尽量要使用复杂一点的内容。如：--------------------56423498738365
+multipart/form-data的请求体也是一个字符串，不过和post的请求体不同的是它的构造方式，post是简单的name=value值连接，而multipart/form-data则是添加了分隔符等内容的构造体
+*/
+
+/*
+ [HTTP URL]: http://118.192.93.31:8038/upload
+ [TYPE]: POST
+ [HEADERS]: {
+ "Accept-Language" = "zh-Hans;q=1";
+ "Content-Length" = 494937;
+ "Content-Type" = "multipart/form-data; boundary=Boundary+5932731645BA9145";
+ "User-Agent" = "cheniu/0.1.0.0 (iPhone Simulator; iOS 8.4; Scale/2.00)";
+ }
+ [BODY]:
+ */
+
+///////////////////////////////////////////////////////////////////////////////
+// AFStreamingMultipartFormData --> AFMultipartBodyStream --> AFHTTPBodyPart //
+///////////////////////////////////////////////////////////////////////////////
 
 @interface AFStreamingMultipartFormData ()
+// 请求
 @property (readwrite, nonatomic, copy) NSMutableURLRequest *request;
+// 字符串编码类型
 @property (readwrite, nonatomic, assign) NSStringEncoding stringEncoding;
+// multipart特有的Content-Type里的组成部分，用来隔开表单中不同部分的数据("Content-Type" = "multipart/form-data; boundary=Boundary+5932731645BA9145";)，用于分割内容
 @property (readwrite, nonatomic, copy) NSString *boundary;
+// AFMultipartBodyStream流
 @property (readwrite, nonatomic, strong) AFMultipartBodyStream *bodyStream;
 @end
 
+#pragma mark - AFStreamingMultipartFormData Implementation
 @implementation AFStreamingMultipartFormData
 
+/**
+ * @param urlRequest urlRequest
+ * @param encoding 编码方式
+ */
 - (id)initWithURLRequest:(NSMutableURLRequest *)urlRequest
           stringEncoding:(NSStringEncoding)encoding
 {
@@ -680,14 +810,20 @@ NSTimeInterval const kAFUploadStream3GSuggestedDelay = 0.2;
         return nil;
     }
 
+    // 请求
     self.request = urlRequest;
+    // 编码方式
     self.stringEncoding = encoding;
+    // 创建boundary
+    // boundary=Boundary+5932731645BA9145"
     self.boundary = AFCreateMultipartFormBoundary();
+    // 初始化请求体流AFMultipartBodyStream
     self.bodyStream = [[AFMultipartBodyStream alloc] initWithStringEncoding:encoding];
 
     return self;
 }
 
+// 通过文件url
 - (BOOL)appendPartWithFileURL:(NSURL *)fileURL
                          name:(NSString *)name
                         error:(NSError * __autoreleasing *)error
@@ -695,12 +831,19 @@ NSTimeInterval const kAFUploadStream3GSuggestedDelay = 0.2;
     NSParameterAssert(fileURL);
     NSParameterAssert(name);
 
+    // 文件名
     NSString *fileName = [fileURL lastPathComponent];
+    // mime type
     NSString *mimeType = AFContentTypeForPathExtension([fileURL pathExtension]);
-
     return [self appendPartWithFileURL:fileURL name:name fileName:fileName mimeType:mimeType error:error];
 }
 
+/**
+ * @param fileURL     外部传进来的文件url路径，lenth通过文件属性获取
+ * @param name        服务端定义
+ * @param fileName    fileName是自己本地标识数据唯一性的名字
+ * @param mimeType    外部传进来的mineType
+ */
 - (BOOL)appendPartWithFileURL:(NSURL *)fileURL
                          name:(NSString *)name
                      fileName:(NSString *)fileName
@@ -712,14 +855,18 @@ NSTimeInterval const kAFUploadStream3GSuggestedDelay = 0.2;
     NSParameterAssert(fileName);
     NSParameterAssert(mimeType);
 
-    if (![fileURL isFileURL]) {
+    // 下面文件url相关操作
+    if (![fileURL isFileURL]) {     // 如果不是一个文件url
+        // 构造NSError userInfo
         NSDictionary *userInfo = @{NSLocalizedFailureReasonErrorKey: NSLocalizedStringFromTable(@"Expected URL to be a file URL", @"AFNetworking", nil)};
         if (error) {
+            // 构造NSError
             *error = [[NSError alloc] initWithDomain:AFURLRequestSerializationErrorDomain code:NSURLErrorBadURL userInfo:userInfo];
         }
 
         return NO;
     } else if ([fileURL checkResourceIsReachableAndReturnError:error] == NO) {
+        // 文件url无效
         NSDictionary *userInfo = @{NSLocalizedFailureReasonErrorKey: NSLocalizedStringFromTable(@"File URL not reachable.", @"AFNetworking", nil)};
         if (error) {
             *error = [[NSError alloc] initWithDomain:AFURLRequestSerializationErrorDomain code:NSURLErrorBadURL userInfo:userInfo];
@@ -728,26 +875,48 @@ NSTimeInterval const kAFUploadStream3GSuggestedDelay = 0.2;
         return NO;
     }
 
+    // 通过文件url返回文件属性
     NSDictionary *fileAttributes = [[NSFileManager defaultManager] attributesOfItemAtPath:[fileURL path] error:error];
     if (!fileAttributes) {
         return NO;
     }
 
+    // 构造headers字典，给AFHTTPBodyPart计算头部长度用
     NSMutableDictionary *mutableHeaders = [NSMutableDictionary dictionary];
+    // Content-Disposition，name是和服务端匹配的，fileName是自己本地标识数据唯一性的名字
+    // "Content-Disposition" = "form-data; name=\"file\"; filename=\"d95ba1db72ffb017ab88942a68544e12\"";
     [mutableHeaders setValue:[NSString stringWithFormat:@"form-data; name=\"%@\"; filename=\"%@\"", name, fileName] forKey:@"Content-Disposition"];
+    // multipart必须包含一个特殊的头信息：Content-Type
+    // "Content-Type" = "image/jpeg";
     [mutableHeaders setValue:mimeType forKey:@"Content-Type"];
-
+    
+    // 设置完之后将header赋给AFHTTPBodyPart，一个multipart类型请求体的封装
+    // 构造AFHTTPBodyPart
     AFHTTPBodyPart *bodyPart = [[AFHTTPBodyPart alloc] init];
+    // 编码方式
     bodyPart.stringEncoding = self.stringEncoding;
+    // headers
     bodyPart.headers = mutableHeaders;
+    // boundary
     bodyPart.boundary = self.boundary;
+    // 这里body为文件url
     bodyPart.body = fileURL;
+    // 文件大小，通过文件属性获得
     bodyPart.bodyContentLength = [fileAttributes[NSFileSize] unsignedLongLongValue];
+    
+    // 添加进AFMultipartBodyStream的body体数组
     [self.bodyStream appendHTTPBodyPart:bodyPart];
 
     return YES;
 }
 
+/**
+ * @param inputStream 外部传进来的数据流
+ * @param name        服务端定义
+ * @param fileName    fileName是自己本地标识数据唯一性的名字
+ * @param length      外部传进来的数据流长度
+ * @param mimeType    外部传进来的mineType
+ */
 - (void)appendPartWithInputStream:(NSInputStream *)inputStream
                              name:(NSString *)name
                          fileName:(NSString *)fileName
@@ -758,21 +927,31 @@ NSTimeInterval const kAFUploadStream3GSuggestedDelay = 0.2;
     NSParameterAssert(fileName);
     NSParameterAssert(mimeType);
 
+    // 构造headers字典，给AFHTTPBodyPart计算头部长度用
     NSMutableDictionary *mutableHeaders = [NSMutableDictionary dictionary];
     [mutableHeaders setValue:[NSString stringWithFormat:@"form-data; name=\"%@\"; filename=\"%@\"", name, fileName] forKey:@"Content-Disposition"];
     [mutableHeaders setValue:mimeType forKey:@"Content-Type"];
 
+    // 构造AFHTTPBodyPart
     AFHTTPBodyPart *bodyPart = [[AFHTTPBodyPart alloc] init];
     bodyPart.stringEncoding = self.stringEncoding;
     bodyPart.headers = mutableHeaders;
     bodyPart.boundary = self.boundary;
+    // 这里body为数据流
     bodyPart.body = inputStream;
-
+    // 数据流大小
     bodyPart.bodyContentLength = (unsigned long long)length;
 
+    // 添加进AFMultipartBodyStream的body体数组
     [self.bodyStream appendHTTPBodyPart:bodyPart];
 }
 
+/**
+ * @param data     外部传进来的文件data，lenth通过data获取
+ * @param name     服务端定义
+ * @param fileName fileName是自己本地标识数据唯一性的名字
+ * @param mimeType 外部传进来的mineType
+ */
 - (void)appendPartWithFileData:(NSData *)data
                           name:(NSString *)name
                       fileName:(NSString *)fileName
@@ -782,36 +961,53 @@ NSTimeInterval const kAFUploadStream3GSuggestedDelay = 0.2;
     NSParameterAssert(fileName);
     NSParameterAssert(mimeType);
 
+    // 构造headers字典，给AFHTTPBodyPart计算头部长度用
     NSMutableDictionary *mutableHeaders = [NSMutableDictionary dictionary];
+    // "Content-Disposition" = "form-data; name=\"file\"; filename=\"d95ba1db72ffb017ab88942a68544e12\"";
     [mutableHeaders setValue:[NSString stringWithFormat:@"form-data; name=\"%@\"; filename=\"%@\"", name, fileName] forKey:@"Content-Disposition"];
+    // "Content-Type" = "image/jpeg";
     [mutableHeaders setValue:mimeType forKey:@"Content-Type"];
 
     [self appendPartWithHeaders:mutableHeaders body:data];
 }
 
+/**
+ * @param data     外部传进来的文件data，lenth通过data获取
+ * @param name     服务端定义
+ */
 - (void)appendPartWithFormData:(NSData *)data
                           name:(NSString *)name
 {
     NSParameterAssert(name);
 
+    // 构造headers字典，给AFHTTPBodyPart计算头部长度用
     NSMutableDictionary *mutableHeaders = [NSMutableDictionary dictionary];
+    // 没有filename
     [mutableHeaders setValue:[NSString stringWithFormat:@"form-data; name=\"%@\"", name] forKey:@"Content-Disposition"];
-
+    
+    // 没有Content-Type
     [self appendPartWithHeaders:mutableHeaders body:data];
 }
 
+// 构造AFHTTPBodyPart并添加进bodyStream
 - (void)appendPartWithHeaders:(NSDictionary *)headers
                          body:(NSData *)body
 {
     NSParameterAssert(body);
 
     AFHTTPBodyPart *bodyPart = [[AFHTTPBodyPart alloc] init];
+    // 编码方式
     bodyPart.stringEncoding = self.stringEncoding;
+    // headers
     bodyPart.headers = headers;
+    // boundary, 用来隔开表单中不同部分的数据
     bodyPart.boundary = self.boundary;
+    // 文件data大小
     bodyPart.bodyContentLength = [body length];
+    // 这里body为文件data
     bodyPart.body = body;
-
+    
+    // 将AFHTTPBodyPart添加进AFMultipartBodyStream的body体数组
     [self.bodyStream appendHTTPBodyPart:bodyPart];
 }
 
@@ -822,22 +1018,37 @@ NSTimeInterval const kAFUploadStream3GSuggestedDelay = 0.2;
     self.bodyStream.delay = delay;
 }
 
+// 请求最后的部分数据，为multipart请求设置Content-Type和Content-Length
 - (NSMutableURLRequest *)requestByFinalizingMultipartFormData {
     if ([self.bodyStream isEmpty]) {
         return self.request;
     }
+    
+    /*
+    "Content-Length" = 193538;
+    "Content-Type" = "multipart/form-data; boundary=Boundary+4B165663A46288B9";
+    */
 
     // Reset the initial and final boundaries to ensure correct Content-Length
+    // 重设boundary以保证正确的Content-Length
     [self.bodyStream setInitialAndFinalBoundaries];
+    // 设置http请求体流
     [self.request setHTTPBodyStream:self.bodyStream];
-
+    
+    // 设置http请求头
+    // 设置Content-Type
     [self.request setValue:[NSString stringWithFormat:@"multipart/form-data; boundary=%@", self.boundary] forHTTPHeaderField:@"Content-Type"];
+    // 设置Content-Length
     [self.request setValue:[NSString stringWithFormat:@"%llu", [self.bodyStream contentLength]] forHTTPHeaderField:@"Content-Length"];
 
     return self.request;
 }
 
 @end
+
+///////////////////////////////////////////////////////////////////////////////////////
+
+////////////////////////////AFMultipartBodyStream//////////////////////////////////////
 
 #pragma mark -
 
@@ -848,12 +1059,17 @@ NSTimeInterval const kAFUploadStream3GSuggestedDelay = 0.2;
 
 @interface AFMultipartBodyStream () <NSCopying>
 @property (readwrite, nonatomic, assign) NSStringEncoding stringEncoding;
+// AFHTTPBodyPart数组
 @property (readwrite, nonatomic, strong) NSMutableArray *HTTPBodyParts;
 @property (readwrite, nonatomic, strong) NSEnumerator *HTTPBodyPartEnumerator;
+// 当前的AFHTTPBodyPart
 @property (readwrite, nonatomic, strong) AFHTTPBodyPart *currentHTTPBodyPart;
 @property (readwrite, nonatomic, strong) NSOutputStream *outputStream;
 @property (readwrite, nonatomic, strong) NSMutableData *buffer;
 @end
+
+#pragma mark -
+#pragma mark - AFMultipartBodyStream Implementation
 
 @implementation AFMultipartBodyStream
 #pragma clang diagnostic push
@@ -872,28 +1088,34 @@ NSTimeInterval const kAFUploadStream3GSuggestedDelay = 0.2;
     }
 
     self.stringEncoding = encoding;
+    // 初始化数组
     self.HTTPBodyParts = [NSMutableArray array];
     self.numberOfBytesInPacket = NSIntegerMax;
 
     return self;
 }
 
+// 设置开始和结束boundary
 - (void)setInitialAndFinalBoundaries {
     if ([self.HTTPBodyParts count] > 0) {
         for (AFHTTPBodyPart *bodyPart in self.HTTPBodyParts) {
+            // 中间部分全为NO
             bodyPart.hasInitialBoundary = NO;
             bodyPart.hasFinalBoundary = NO;
         }
-
+        // 设置第一个为初始boundary
         [[self.HTTPBodyParts firstObject] setHasInitialBoundary:YES];
+        // 设置最后一个为最后boundary
         [[self.HTTPBodyParts lastObject] setHasFinalBoundary:YES];
     }
 }
 
+// 添加进HTTPBodyParts数组
 - (void)appendHTTPBodyPart:(AFHTTPBodyPart *)bodyPart {
     [self.HTTPBodyParts addObject:bodyPart];
 }
 
+// 请求体数组是否为空
 - (BOOL)isEmpty {
     return [self.HTTPBodyParts count] == 0;
 }
@@ -1022,6 +1244,10 @@ NSTimeInterval const kAFUploadStream3GSuggestedDelay = 0.2;
 
 @end
 
+//////////////////////////////////////////////////////////////////
+
+////////////////////////////AFHTTPBodyPart//////////////////////////////////////
+
 #pragma mark -
 
 typedef enum {
@@ -1043,6 +1269,9 @@ typedef enum {
             maxLength:(NSUInteger)length;
 @end
 
+
+#pragma mark -
+#pragma mark - AFHTTPBodyPart Implementation
 @implementation AFHTTPBodyPart
 
 - (id)init {
@@ -1058,6 +1287,7 @@ typedef enum {
 
 - (void)dealloc {
     if (_inputStream) {
+        // 关闭输入流并置为nil
         [_inputStream close];
         _inputStream = nil;
     }
@@ -1066,10 +1296,13 @@ typedef enum {
 - (NSInputStream *)inputStream {
     if (!_inputStream) {
         if ([self.body isKindOfClass:[NSData class]]) {
+            // data
             _inputStream = [NSInputStream inputStreamWithData:self.body];
         } else if ([self.body isKindOfClass:[NSURL class]]) {
+            // url
             _inputStream = [NSInputStream inputStreamWithURL:self.body];
         } else if ([self.body isKindOfClass:[NSInputStream class]]) {
+            // stream
             _inputStream = self.body;
         } else {
             _inputStream = [NSInputStream inputStreamWithData:[NSData data]];
@@ -1079,28 +1312,36 @@ typedef enum {
     return _inputStream;
 }
 
+// 拼接headers，返回头部字符串
 - (NSString *)stringForHeaders {
     NSMutableString *headerString = [NSMutableString string];
+    // 遍历头部key
     for (NSString *field in [self.headers allKeys]) {
         [headerString appendString:[NSString stringWithFormat:@"%@: %@%@", field, [self.headers valueForKey:field], kAFMultipartFormCRLF]];
     }
     [headerString appendString:kAFMultipartFormCRLF];
-
+    // 返回格式：
+    // Content-Disposition: form-data; name="file"; filename="099c2c5b236f5c7fd3a58cab9b1a4b87" Content-Type: image/jpeg
     return [NSString stringWithString:headerString];
 }
 
+// override contentLength
 - (unsigned long long)contentLength {
     unsigned long long length = 0;
 
     NSData *encapsulationBoundaryData = [([self hasInitialBoundary] ? AFMultipartFormInitialBoundary(self.boundary) : AFMultipartFormEncapsulationBoundary(self.boundary)) dataUsingEncoding:self.stringEncoding];
+    // + 开始长度
     length += [encapsulationBoundaryData length];
 
+    // http头data
     NSData *headersData = [[self stringForHeaders] dataUsingEncoding:self.stringEncoding];
+    // + http头长度
     length += [headersData length];
-
+    // +body体大小，即文件大小
     length += _bodyContentLength;
 
     NSData *closingBoundaryData = ([self hasFinalBoundary] ? [AFMultipartFormFinalBoundary(self.boundary) dataUsingEncoding:self.stringEncoding] : [NSData data]);
+    // + 关闭长度
     length += [closingBoundaryData length];
 
     return length;
@@ -1187,7 +1428,9 @@ typedef enum {
     return (NSInteger)range.length;
 }
 
+// 过渡到下一阶段
 - (BOOL)transitionToNextPhase {
+    // 如果不是主线程，则回到主线程操作
     if (![[NSThread currentThread] isMainThread]) {
         dispatch_sync(dispatch_get_main_queue(), ^{
             [self transitionToNextPhase];
@@ -1237,7 +1480,10 @@ typedef enum {
 
 @end
 
+////////////////////////////AFJSONRequestSerializer//////////////////////////////////////
+
 #pragma mark -
+#pragma mark AFJSONRequestSerializer Implementation
 
 @implementation AFJSONRequestSerializer
 
@@ -1267,6 +1513,7 @@ typedef enum {
 
     NSMutableURLRequest *mutableRequest = [request mutableCopy];
 
+    // 设置http请求头
     [self.HTTPRequestHeaders enumerateKeysAndObjectsUsingBlock:^(id field, id value, BOOL * __unused stop) {
         if (![request valueForHTTPHeaderField:field]) {
             [mutableRequest setValue:value forHTTPHeaderField:field];
@@ -1275,9 +1522,10 @@ typedef enum {
 
     if (parameters) {
         if (![mutableRequest valueForHTTPHeaderField:@"Content-Type"]) {
+            // 设置Content-Type为application/json
             [mutableRequest setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
         }
-
+        // 设置http请求体
         [mutableRequest setHTTPBody:[NSJSONSerialization dataWithJSONObject:parameters options:self.writingOptions error:error]];
     }
 
@@ -1314,6 +1562,8 @@ typedef enum {
 
 @end
 
+////////////////////////////AFPropertyListRequestSerializer//////////////////////////////////////
+
 #pragma mark -
 
 @implementation AFPropertyListRequestSerializer
@@ -1345,7 +1595,7 @@ typedef enum {
     }
 
     NSMutableURLRequest *mutableRequest = [request mutableCopy];
-
+    // 设置http请求头
     [self.HTTPRequestHeaders enumerateKeysAndObjectsUsingBlock:^(id field, id value, BOOL * __unused stop) {
         if (![request valueForHTTPHeaderField:field]) {
             [mutableRequest setValue:value forHTTPHeaderField:field];
@@ -1354,9 +1604,10 @@ typedef enum {
 
     if (parameters) {
         if (![mutableRequest valueForHTTPHeaderField:@"Content-Type"]) {
+            // 设置Content-Type为application/x-plist
             [mutableRequest setValue:@"application/x-plist" forHTTPHeaderField:@"Content-Type"];
         }
-
+        // 设置http请求体
         [mutableRequest setHTTPBody:[NSPropertyListSerialization dataWithPropertyList:parameters format:self.format options:self.writeOptions error:error]];
     }
 

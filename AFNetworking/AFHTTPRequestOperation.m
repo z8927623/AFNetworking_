@@ -21,6 +21,8 @@
 
 #import "AFHTTPRequestOperation.h"
 
+// 创建GCD并发队列
+// 单例
 static dispatch_queue_t http_request_operation_processing_queue() {
     static dispatch_queue_t af_http_request_operation_processing_queue;
     static dispatch_once_t onceToken;
@@ -31,6 +33,8 @@ static dispatch_queue_t http_request_operation_processing_queue() {
     return af_http_request_operation_processing_queue;
 }
 
+// 创建GCD组
+// 单例
 static dispatch_group_t http_request_operation_completion_group() {
     static dispatch_group_t af_http_request_operation_completion_group;
     static dispatch_once_t onceToken;
@@ -45,10 +49,12 @@ static dispatch_group_t http_request_operation_completion_group() {
 
 @interface AFURLConnectionOperation ()
 @property (readwrite, nonatomic, strong) NSURLRequest *request;
+// NSURLResponse
 @property (readwrite, nonatomic, strong) NSURLResponse *response;
 @end
 
 @interface AFHTTPRequestOperation ()
+// NSHTTPURLResponse inherit NSURLResponse
 @property (readwrite, nonatomic, strong) NSHTTPURLResponse *response;
 @property (readwrite, nonatomic, strong) id responseObject;
 @property (readwrite, nonatomic, strong) NSError *responseSerializationError;
@@ -72,8 +78,9 @@ static dispatch_group_t http_request_operation_completion_group() {
 
 - (void)setResponseSerializer:(AFHTTPResponseSerializer <AFURLResponseSerialization> *)responseSerializer {
     NSParameterAssert(responseSerializer);
-
+    // lock
     [self.lock lock];
+    // Setting a response serializer will clear out any cached value
     _responseSerializer = responseSerializer;
     self.responseObject = nil;
     self.responseSerializationError = nil;
@@ -84,6 +91,7 @@ static dispatch_group_t http_request_operation_completion_group() {
     [self.lock lock];
     if (!_responseObject && [self isFinished] && !self.error) {
         NSError *error = nil;
+        // 由AFHTTPResponseSerializer生成responseObject
         self.responseObject = [self.responseSerializer responseObjectForResponse:self.response data:self.responseData error:&error];
         if (error) {
             self.responseSerializationError = error;
@@ -111,6 +119,8 @@ static dispatch_group_t http_request_operation_completion_group() {
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Warc-retain-cycles"
 #pragma clang diagnostic ignored "-Wgnu"
+    // 直接覆写NSOperation的completionBlock，当isFinished为YES的时候会调用
+    // 这里其实是循环引用的，self->completionBlock->self，不这样的话传到外面block里的operation就会释放掉
     self.completionBlock = ^{
         if (self.completionGroup) {
             dispatch_group_enter(self.completionGroup);
@@ -150,20 +160,29 @@ static dispatch_group_t http_request_operation_completion_group() {
 
 #pragma mark - AFURLRequestOperation
 
+// 暂停操作
 - (void)pause {
+    // 调用父类
     [super pause];
 
     u_int64_t offset = 0;
     if ([self.outputStream propertyForKey:NSStreamFileCurrentOffsetKey]) {
+        // 读取当前的offset
         offset = [(NSNumber *)[self.outputStream propertyForKey:NSStreamFileCurrentOffsetKey] unsignedLongLongValue];
     } else {
         offset = [(NSData *)[self.outputStream propertyForKey:NSStreamDataWrittenToMemoryStreamKey] length];
     }
 
     NSMutableURLRequest *mutableURLRequest = [self.request mutableCopy];
+    // 如果http请求含有headers并且服务端支持ETag
     if ([self.response respondsToSelector:@selector(allHeaderFields)] && [[self.response allHeaderFields] valueForKey:@"ETag"]) {
+        // 设置If-Range头，设置ETag来缓存
+        // If-Range头部需配合Range，如果没有Range参数，则If-Range会被视为无效
+        // 如果If-Range匹配上，那么客户端已经存在的部分是有效的，服务器将返回缺失部分，也就是Range里指定的，然后返回206，否则证明客户端的部分已无效（可能已经更改），那么服务器将整个实体内容全部返回给客户端，同时返回200OK
+        // 格式：If-Range: "df6b0-b4a-3be1b5e1"
         [mutableURLRequest setValue:[[self.response allHeaderFields] valueForKey:@"ETag"] forHTTPHeaderField:@"If-Range"];
     }
+    // 设置range头，以便下次请求从offset处开始
     [mutableURLRequest setValue:[NSString stringWithFormat:@"bytes=%llu-", offset] forHTTPHeaderField:@"Range"];
     self.request = mutableURLRequest;
 }

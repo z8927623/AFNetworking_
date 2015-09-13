@@ -27,6 +27,7 @@ NS_ASSUME_NONNULL_BEGIN
 /**
  `AFHTTPRequestOperation` is a subclass of `AFURLConnectionOperation` for requests using the HTTP or HTTPS protocols. It encapsulates the concept of acceptable status codes and content types, which determine the success or failure of a request.
  */
+// HTTP请求封装
 @interface AFHTTPRequestOperation : AFURLConnectionOperation
 
 ///------------------------------------------------
@@ -36,6 +37,7 @@ NS_ASSUME_NONNULL_BEGIN
 /**
  The last HTTP response received by the operation's connection.
  */
+// 这里是NSHTTPURLResponse
 @property (readonly, nonatomic, strong, nullable) NSHTTPURLResponse *response;
 
 /**
