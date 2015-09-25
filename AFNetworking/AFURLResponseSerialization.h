@@ -29,6 +29,8 @@ NS_ASSUME_NONNULL_BEGIN
 
  For example, a JSON response serializer may check for an acceptable status code (`2XX` range) and content type (`application/json`), decoding a valid JSON response into an object.
  */
+
+// 定义协议
 @protocol AFURLResponseSerialization <NSObject, NSSecureCoding, NSCopying>
 
 /**
@@ -53,6 +55,8 @@ NS_ASSUME_NONNULL_BEGIN
 
  Any request or response serializer dealing with HTTP is encouraged to subclass `AFHTTPResponseSerializer` in order to ensure consistent default behavior.
  */
+
+// HTTP
 @interface AFHTTPResponseSerializer : NSObject <AFURLResponseSerialization>
 
 - (instancetype)init;
@@ -112,6 +116,8 @@ NS_ASSUME_NONNULL_BEGIN
  - `text/json`
  - `text/javascript`
  */
+
+// JSON
 @interface AFJSONResponseSerializer : AFHTTPResponseSerializer
 
 - (instancetype)init;
@@ -161,6 +167,8 @@ NS_ASSUME_NONNULL_BEGIN
  - `application/xml`
  - `text/xml`
  */
+
+// XML文档
 @interface AFXMLDocumentResponseSerializer : AFHTTPResponseSerializer
 
 - (instancetype)init;
@@ -190,6 +198,8 @@ NS_ASSUME_NONNULL_BEGIN
 
  - `application/x-plist`
  */
+
+// 属性列表
 @interface AFPropertyListResponseSerializer : AFHTTPResponseSerializer
 
 - (instancetype)init;

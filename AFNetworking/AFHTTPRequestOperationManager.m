@@ -37,6 +37,7 @@
 
 @implementation AFHTTPRequestOperationManager
 
+// 类方法，不是单例！
 + (instancetype)manager {
     return [[self alloc] initWithBaseURL:nil];
 }
@@ -57,14 +58,14 @@
     }
 
     self.baseURL = url;
-
+    // 初始化请求serializer和返回值serializer，并不是单例
     self.requestSerializer = [AFHTTPRequestSerializer serializer];
     self.responseSerializer = [AFJSONResponseSerializer serializer];
-
+    
     self.securityPolicy = [AFSecurityPolicy defaultPolicy];
-
+    // 初始化reachbility，单例
     self.reachabilityManager = [AFNetworkReachabilityManager sharedManager];
-
+    // 初始化操作队列
     self.operationQueue = [[NSOperationQueue alloc] init];
 
     self.shouldUseCredentialStorage = YES;
@@ -91,6 +92,7 @@
 
 #pragma mark -
 
+// 调用AFJSONResponseSerializer的方法配置NSURLRequest
 - (AFHTTPRequestOperation *)HTTPRequestOperationWithHTTPMethod:(NSString *)method
                                                      URLString:(NSString *)URLString
                                                     parameters:(id)parameters
@@ -98,6 +100,7 @@
                                                        failure:(void (^)(AFHTTPRequestOperation *operation, NSError *error))failure
 {
     NSError *serializationError = nil;
+    // 调用AFJSONResponseSerializer的方法配置NSURLRequest
     NSMutableURLRequest *request = [self.requestSerializer requestWithMethod:method URLString:[[NSURL URLWithString:URLString relativeToURL:self.baseURL] absoluteString] parameters:parameters error:&serializationError];
     if (serializationError) {
         if (failure) {
@@ -114,38 +117,44 @@
 
     return [self HTTPRequestOperationWithRequest:request success:success failure:failure];
 }
-
+// 初始化operation并返回operation
 - (AFHTTPRequestOperation *)HTTPRequestOperationWithRequest:(NSURLRequest *)request
                                                     success:(void (^)(AFHTTPRequestOperation *operation, id responseObject))success
                                                     failure:(void (^)(AFHTTPRequestOperation *operation, NSError *error))failure
 {
+    // 初始化operation
     AFHTTPRequestOperation *operation = [[AFHTTPRequestOperation alloc] initWithRequest:request];
+    // 将AFHTTPRequestSerializer赋给operation
     operation.responseSerializer = self.responseSerializer;
     operation.shouldUseCredentialStorage = self.shouldUseCredentialStorage;
     operation.credential = self.credential;
     operation.securityPolicy = self.securityPolicy;
-
+    // 将成功和失败回调赋给operation
     [operation setCompletionBlockWithSuccess:success failure:failure];
     operation.completionQueue = self.completionQueue;
     operation.completionGroup = self.completionGroup;
-
+    // 返回operation
     return operation;
 }
 
 #pragma mark -
 
+// GET
+// 初始化operation并添加进operationQueue
 - (AFHTTPRequestOperation *)GET:(NSString *)URLString
                      parameters:(id)parameters
                         success:(void (^)(AFHTTPRequestOperation *operation, id responseObject))success
                         failure:(void (^)(AFHTTPRequestOperation *operation, NSError *error))failure
 {
+    // 初始化operation
     AFHTTPRequestOperation *operation = [self HTTPRequestOperationWithHTTPMethod:@"GET" URLString:URLString parameters:parameters success:success failure:failure];
-
+    // 添加进operationQueue
     [self.operationQueue addOperation:operation];
-
+    // 返回operation
     return operation;
 }
 
+// HEAD
 - (AFHTTPRequestOperation *)HEAD:(NSString *)URLString
                       parameters:(id)parameters
                          success:(void (^)(AFHTTPRequestOperation *operation))success
@@ -162,6 +171,7 @@
     return operation;
 }
 
+// POST
 - (AFHTTPRequestOperation *)POST:(NSString *)URLString
                       parameters:(id)parameters
                          success:(void (^)(AFHTTPRequestOperation *operation, id responseObject))success
@@ -174,6 +184,7 @@
     return operation;
 }
 
+// multipart请求
 - (AFHTTPRequestOperation *)POST:(NSString *)URLString
                       parameters:(id)parameters
        constructingBodyWithBlock:(void (^)(id <AFMultipartFormData> formData))block
@@ -202,6 +213,7 @@
     return operation;
 }
 
+// PUT
 - (AFHTTPRequestOperation *)PUT:(NSString *)URLString
                      parameters:(id)parameters
                         success:(void (^)(AFHTTPRequestOperation *operation, id responseObject))success
@@ -214,6 +226,7 @@
     return operation;
 }
 
+// PATCH
 - (AFHTTPRequestOperation *)PATCH:(NSString *)URLString
                        parameters:(id)parameters
                           success:(void (^)(AFHTTPRequestOperation *operation, id responseObject))success
@@ -226,6 +239,7 @@
     return operation;
 }
 
+// DELETE
 - (AFHTTPRequestOperation *)DELETE:(NSString *)URLString
                         parameters:(id)parameters
                            success:(void (^)(AFHTTPRequestOperation *operation, id responseObject))success

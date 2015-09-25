@@ -202,13 +202,17 @@ static inline BOOL AFStateTransitionIsValid(AFOperationState fromState, AFOperat
         [[NSThread currentThread] setName:@"AFNetworking"];
 
         NSRunLoop *runLoop = [NSRunLoop currentRunLoop];
-        // 设置port作为input source输入源，不加port NSURLConnection会收不到回调？
+        // 设置port作为input source输入源
         [runLoop addPort:[NSMachPort port] forMode:NSDefaultRunLoopMode];
+        // 开启
         [runLoop run];
     }
 }
 
 // 该方法为单例
+// 在等待请求时只有一个Thread, 然后在这个Thread上启动一个runLoop监听NSURLConnection的NSMachPort类型源
+// start、cancel、pause操作是在该线程操作的
+// 该线程并不是最终访问网络并拉取数据的线程，真正的下载数据是NSURLConnection统一调度的
 + (NSThread *)networkRequestThread {
     static NSThread *_networkRequestThread = nil;
     static dispatch_once_t oncePredicate;
@@ -222,6 +226,7 @@ static inline BOOL AFStateTransitionIsValid(AFOperationState fromState, AFOperat
     return _networkRequestThread;
 }
 
+// 初始化方法，供外部调用
 - (instancetype)initWithRequest:(NSURLRequest *)urlRequest {
     NSParameterAssert(urlRequest);
 
@@ -378,6 +383,7 @@ static inline BOOL AFStateTransitionIsValid(AFOperationState fromState, AFOperat
         // 开启后台任务
         backgroundTaskIdentifier = [application beginBackgroundTaskWithExpirationHandler:^{
             // 强引用
+            // 一旦进入block执行，就不允许self在这个执行过程中释放
             __strong __typeof(weakSelf)strongSelf = weakSelf;
             // 执行需要在后台执行的一些任务
             if (handler) {
@@ -429,6 +435,7 @@ static inline BOOL AFStateTransitionIsValid(AFOperationState fromState, AFOperat
 
     [self.lock lock];
     if ([self isExecuting]) {   // 正在执行
+        // start跳到networkRequestThread线程中执行
         [self performSelector:@selector(operationDidPause) onThread:[[self class] networkRequestThread] withObject:nil waitUntilDone:NO modes:[self.runLoopModes allObjects]];
 
         // 到主线程发送操作完成通知
@@ -450,6 +457,7 @@ static inline BOOL AFStateTransitionIsValid(AFOperationState fromState, AFOperat
     [self.lock unlock];
 }
 
+// 是否暂停
 - (BOOL)isPaused {
     return self.state == AFOperationPausedState;
 }
@@ -518,6 +526,8 @@ static inline BOOL AFStateTransitionIsValid(AFOperationState fromState, AFOperat
 }
 
 // 重写start方法，该方法在NSOperation放入NSOperationQueue之后执行
+// 当实现了start方法时，默认会执行start方法，而不执行main方法
+// main方法一般用来执行同步任务
 - (void)start {
     // 注意上锁
     [self.lock lock];
@@ -528,7 +538,7 @@ static inline BOOL AFStateTransitionIsValid(AFOperationState fromState, AFOperat
     } else if ([self isReady]) {  // ready状态，表示已可以执行
         // 修改状态为isExecuting
         self.state = AFOperationExecutingState;
-        // 另开一个线程处理开始操作
+        // 在公共独立子线程配合Run Loop来实现管理网络请求，因此查看堆栈会发现实际上只有一个AFNetworking的线程
         [self performSelector:@selector(operationDidStart) onThread:[[self class] networkRequestThread] withObject:nil waitUntilDone:NO modes:[self.runLoopModes allObjects]];
     }
     // 解锁
@@ -599,12 +609,16 @@ static inline BOOL AFStateTransitionIsValid(AFOperationState fromState, AFOperat
     // 判断是否已取消
     if (![self isCancelled]) {
         // 在新起的名为AFNetworking的线程中初始化NSURLConnection
+        // 如果不在networkRequestThread线程中，必须开启operation的runloop去接收异步回调事件，因为后台线程runloop默认是不启动的
+        // 就是说代码执行完，线程就结束被回收了，因此NSURLConnection的代理operation就是nil，因此connection还在执行，但是收不到回调
         self.connection = [[NSURLConnection alloc] initWithRequest:self.request delegate:self startImmediately:NO];
 
         NSRunLoop *runLoop = [NSRunLoop currentRunLoop];
         for (NSString *runLoopMode in self.runLoopModes) {
-            // 指定运行模式为在NSRunLoopCommonModes中运行
+            // 绑定事件源
+            // 指定connection运行模式为在NSRunLoopCommonModes
             [self.connection scheduleInRunLoop:runLoop forMode:runLoopMode];
+            // 指定stream运行模式为在NSRunLoopCommonModes
             [self.outputStream scheduleInRunLoop:runLoop forMode:runLoopMode];
         }
 
@@ -875,7 +889,8 @@ didReceiveResponse:(NSURLResponse *)response
     // 关闭输出流
     [self.outputStream close];
     if (self.responseData) {
-       self.outputStream = nil;
+        // 将输出流置为nil
+        self.outputStream = nil;
     }
 
     // 将NSURLConnection置为nil
@@ -895,6 +910,7 @@ didReceiveResponse:(NSURLResponse *)response
     // 关闭输出流
     [self.outputStream close];
     if (self.responseData) {
+        // 将输出流置为nil
         self.outputStream = nil;
     }
 

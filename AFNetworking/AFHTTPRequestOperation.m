@@ -54,9 +54,11 @@ static dispatch_group_t http_request_operation_completion_group() {
 @end
 
 @interface AFHTTPRequestOperation ()
-// NSHTTPURLResponse inherit NSURLResponse
+// NSHTTPURLResponse 继承自 NSURLResponse
 @property (readwrite, nonatomic, strong) NSHTTPURLResponse *response;
+// responseObject
 @property (readwrite, nonatomic, strong) id responseObject;
+// responseSerializationError
 @property (readwrite, nonatomic, strong) NSError *responseSerializationError;
 @property (readwrite, nonatomic, strong) NSRecursiveLock *lock;
 @end
@@ -65,35 +67,41 @@ static dispatch_group_t http_request_operation_completion_group() {
 @dynamic response;
 @dynamic lock;
 
+// 初始化方法
 - (instancetype)initWithRequest:(NSURLRequest *)urlRequest {
     self = [super initWithRequest:urlRequest];
     if (!self) {
         return nil;
     }
-
+    // 初始化AFHTTPResponseSerializer，返回值解析，并不是单例！!
     self.responseSerializer = [AFHTTPResponseSerializer serializer];
 
     return self;
 }
 
+// 设置AFHTTPResponseSerializer
 - (void)setResponseSerializer:(AFHTTPResponseSerializer <AFURLResponseSerialization> *)responseSerializer {
     NSParameterAssert(responseSerializer);
     // lock
     [self.lock lock];
     // Setting a response serializer will clear out any cached value
     _responseSerializer = responseSerializer;
+    // 初始化置为nil
     self.responseObject = nil;
     self.responseSerializationError = nil;
     [self.lock unlock];
 }
 
+// 生成返回对象
 - (id)responseObject {
     [self.lock lock];
     if (!_responseObject && [self isFinished] && !self.error) {
         NSError *error = nil;
         // 由AFHTTPResponseSerializer生成responseObject
+        // NSURLResponse
         self.responseObject = [self.responseSerializer responseObjectForResponse:self.response data:self.responseData error:&error];
         if (error) {
+            // 赋值给responseSerializationError
             self.responseSerializationError = error;
         }
     }
@@ -129,6 +137,7 @@ static dispatch_group_t http_request_operation_completion_group() {
         dispatch_async(http_request_operation_processing_queue(), ^{
             if (self.error) {
                 if (failure) {
+                    // 回到主线程
                     dispatch_group_async(self.completionGroup ?: http_request_operation_completion_group(), self.completionQueue ?: dispatch_get_main_queue(), ^{
                         failure(self, self.error);
                     });
@@ -137,12 +146,14 @@ static dispatch_group_t http_request_operation_completion_group() {
                 id responseObject = self.responseObject;
                 if (self.error) {
                     if (failure) {
+                        // 回到主线程
                         dispatch_group_async(self.completionGroup ?: http_request_operation_completion_group(), self.completionQueue ?: dispatch_get_main_queue(), ^{
                             failure(self, self.error);
                         });
                     }
                 } else {
                     if (success) {
+                        // 回到主线程
                         dispatch_group_async(self.completionGroup ?: http_request_operation_completion_group(), self.completionQueue ?: dispatch_get_main_queue(), ^{
                             success(self, responseObject);
                         });

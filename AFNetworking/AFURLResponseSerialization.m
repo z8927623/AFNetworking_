@@ -30,7 +30,9 @@
 #endif
 
 NSString * const AFURLResponseSerializationErrorDomain = @"com.alamofire.error.serialization.response";
+// NSURLResponse解析错误key
 NSString * const AFNetworkingOperationFailingURLResponseErrorKey = @"com.alamofire.serialization.response.error.response";
+// NSData解析错误key
 NSString * const AFNetworkingOperationFailingURLResponseDataErrorKey = @"com.alamofire.serialization.response.error.data";
 
 static NSError * AFErrorWithUnderlyingError(NSError *error, NSError *underlyingError) {
@@ -83,6 +85,7 @@ static id AFJSONObjectByRemovingKeysWithNullValues(id JSONObject, NSJSONReadingO
     return JSONObject;
 }
 
+////////////////////////////////AFHTTPResponseSerializer//////////////////////////////////////////
 @implementation AFHTTPResponseSerializer
 
 + (instancetype)serializer {
@@ -96,8 +99,9 @@ static id AFJSONObjectByRemovingKeysWithNullValues(id JSONObject, NSJSONReadingO
     }
 
     self.stringEncoding = NSUTF8StringEncoding;
-
+    // 可接受的状态码
     self.acceptableStatusCodes = [NSIndexSet indexSetWithIndexesInRange:NSMakeRange(200, 100)];
+    // 可接受的内容类型
     self.acceptableContentTypes = nil;
 
     return self;
@@ -107,20 +111,26 @@ static id AFJSONObjectByRemovingKeysWithNullValues(id JSONObject, NSJSONReadingO
 
 - (BOOL)validateResponse:(NSHTTPURLResponse *)response
                     data:(NSData *)data
-                   error:(NSError * __autoreleasing *)error
+                   error:(NSError * __autoreleasing *)error     // __autoreleasing，error在方法内生成
 {
     BOOL responseIsValid = YES;
     NSError *validationError = nil;
 
     if (response && [response isKindOfClass:[NSHTTPURLResponse class]]) {
+        // 不是符合要求的内容类型
         if (self.acceptableContentTypes && ![self.acceptableContentTypes containsObject:[response MIMEType]]) {
             if ([data length] > 0 && [response URL]) {
+                // 拼接错误
                 NSMutableDictionary *mutableUserInfo = [@{
+                                                          // 错误描述
                                                           NSLocalizedDescriptionKey: [NSString stringWithFormat:NSLocalizedStringFromTable(@"Request failed: unacceptable content-type: %@", @"AFNetworking", nil), [response MIMEType]],
+                                                          // URL错误key
                                                           NSURLErrorFailingURLErrorKey:[response URL],
+                                                          // NSURLResponse解析错误key
                                                           AFNetworkingOperationFailingURLResponseErrorKey: response,
                                                         } mutableCopy];
                 if (data) {
+                    // 返回值解析错误key
                     mutableUserInfo[AFNetworkingOperationFailingURLResponseDataErrorKey] = data;
                 }
 
@@ -130,6 +140,7 @@ static id AFJSONObjectByRemovingKeysWithNullValues(id JSONObject, NSJSONReadingO
             responseIsValid = NO;
         }
 
+        // 不是可接受的状态码
         if (self.acceptableStatusCodes && ![self.acceptableStatusCodes containsIndex:(NSUInteger)response.statusCode] && [response URL]) {
             NSMutableDictionary *mutableUserInfo = [@{
                                                NSLocalizedDescriptionKey: [NSString stringWithFormat:NSLocalizedStringFromTable(@"Request failed: %@ (%ld)", @"AFNetworking", nil), [NSHTTPURLResponse localizedStringForStatusCode:response.statusCode], (long)response.statusCode],
@@ -138,6 +149,7 @@ static id AFJSONObjectByRemovingKeysWithNullValues(id JSONObject, NSJSONReadingO
                                        } mutableCopy];
 
             if (data) {
+                // 返回值解析错误key
                 mutableUserInfo[AFNetworkingOperationFailingURLResponseDataErrorKey] = data;
             }
 
@@ -160,6 +172,7 @@ static id AFJSONObjectByRemovingKeysWithNullValues(id JSONObject, NSJSONReadingO
                            data:(NSData *)data
                           error:(NSError *__autoreleasing *)error
 {
+    // 转成NSHTTPURLResponse
     [self validateResponse:(NSHTTPURLResponse *)response data:data error:error];
 
     return data;
@@ -200,6 +213,7 @@ static id AFJSONObjectByRemovingKeysWithNullValues(id JSONObject, NSJSONReadingO
 
 @end
 
+////////////////////////////////AFJSONResponseSerializer////////////////////////////////////////
 #pragma mark -
 
 @implementation AFJSONResponseSerializer
@@ -221,6 +235,7 @@ static id AFJSONObjectByRemovingKeysWithNullValues(id JSONObject, NSJSONReadingO
         return nil;
     }
 
+    // 可接受的内容类型
     self.acceptableContentTypes = [NSSet setWithObjects:@"application/json", @"text/json", @"text/javascript", nil];
 
     return self;
@@ -318,6 +333,7 @@ static id AFJSONObjectByRemovingKeysWithNullValues(id JSONObject, NSJSONReadingO
 
 @end
 
+////////////////////////////////AFXMLParserResponseSerializer////////////////////////////////////////
 #pragma mark -
 
 @implementation AFXMLParserResponseSerializer
@@ -437,6 +453,9 @@ static id AFJSONObjectByRemovingKeysWithNullValues(id JSONObject, NSJSONReadingO
 @end
 
 #endif
+
+
+////////////////////////////////AFPropertyListResponseSerializer////////////////////////////////////////
 
 #pragma mark -
 
