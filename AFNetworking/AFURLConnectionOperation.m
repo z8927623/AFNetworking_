@@ -93,6 +93,7 @@ static inline NSString * AFKeyPathFromOperationState(AFOperationState state) {
         case AFOperationPausedState:
             return @"isPaused";
         default: {
+            // 走不到的代码
             // 消除警告，不然pod lib lint通不过
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wunreachable-code"
@@ -103,7 +104,7 @@ static inline NSString * AFKeyPathFromOperationState(AFOperationState state) {
 }
 
 /**
- * 判断状态转变是否是合理的
+ * 判断状态转变是否是合理的，即规定可以从什么状态切换到什么状态
  *
  * @param fromState 状态
  * @param toState 要转变的状态
@@ -195,6 +196,7 @@ static inline BOOL AFStateTransitionIsValid(AFOperationState fromState, AFOperat
 @synthesize outputStream = _outputStream;
 
 #pragma mark - LifeCycle
+
 + (void)networkRequestThreadEntryPoint:(id)__unused object {
     // 必须创建自己的自动释放池，因为对主线程的autorelease pool不具备访问权
     @autoreleasepool {
@@ -204,7 +206,7 @@ static inline BOOL AFStateTransitionIsValid(AFOperationState fromState, AFOperat
         NSRunLoop *runLoop = [NSRunLoop currentRunLoop];
         // 设置port作为input source输入源
         [runLoop addPort:[NSMachPort port] forMode:NSDefaultRunLoopMode];
-        // 开启
+        // 开启子线程的RunLoop
         [runLoop run];
     }
 }
@@ -570,6 +572,7 @@ static inline BOOL AFStateTransitionIsValid(AFOperationState fromState, AFOperat
     // lock
     [self.lock lock];
     if (!block) {
+        // 手动设置为nil
         [super setCompletionBlock:nil];
     } else {
         // 弱引用，防止循环引用
@@ -587,6 +590,7 @@ static inline BOOL AFStateTransitionIsValid(AFOperationState fromState, AFOperat
 #pragma clang diagnostic pop
             // 调用单个operation完成的操作block
             dispatch_group_async(group, queue, ^{
+                // 执行AFHTTPRequestOperation中定义的completionBlockblock的内容
                 block();
             });
             
@@ -761,6 +765,27 @@ static inline BOOL AFStateTransitionIsValid(AFOperationState fromState, AFOperat
 
 #pragma mark - NSURLConnectionDelegate
 
+// 1
+// 设置URL重定向时执行的block
+// 在执行请求之前调用，处理网络协议的重定向
+- (NSURLRequest *)connection:(NSURLConnection *)connection
+             willSendRequest:(NSURLRequest *)request
+            redirectResponse:(NSURLResponse *)redirectResponse
+{
+    if (self.redirectResponse) {
+        return self.redirectResponse(connection, request, redirectResponse);
+    } else {
+        return request;
+    }
+}
+
+// 2
+// 是否使用凭证存储来认证连接
+- (BOOL)connectionShouldUseCredentialStorage:(NSURLConnection __unused *)connection {
+    return self.shouldUseCredentialStorage;
+}
+
+// 3（HTTPS）
 // 告诉协议，连接（connection）将会为身份认证询问发送一个请求
 // 该消息之后会发送connectionShouldUseCredentialStorage消息
 - (void)connection:(NSURLConnection *)connection
@@ -770,7 +795,7 @@ willSendRequestForAuthenticationChallenge:(NSURLAuthenticationChallenge *)challe
         self.authenticationChallenge(connection, challenge);
         return;
     }
-
+    
     if ([challenge.protectionSpace.authenticationMethod isEqualToString:NSURLAuthenticationMethodServerTrust]) {
         if ([self.securityPolicy evaluateServerTrust:challenge.protectionSpace.serverTrust forDomain:challenge.protectionSpace.host]) {
             NSURLCredential *credential = [NSURLCredential credentialForTrust:challenge.protectionSpace.serverTrust];
@@ -791,24 +816,9 @@ willSendRequestForAuthenticationChallenge:(NSURLAuthenticationChallenge *)challe
     }
 }
 
-// 是否使用凭证存储来认证连接
-- (BOOL)connectionShouldUseCredentialStorage:(NSURLConnection __unused *)connection {
-    return self.shouldUseCredentialStorage;
-}
-
-// 设置URL重定向时执行的block
-// 在执行请求之前调用，处理网络协议的重定向
-- (NSURLRequest *)connection:(NSURLConnection *)connection
-             willSendRequest:(NSURLRequest *)request
-            redirectResponse:(NSURLResponse *)redirectResponse
-{
-    if (self.redirectResponse) {
-        return self.redirectResponse(connection, request, redirectResponse);
-    } else {
-        return request;
-    }
-}
-// 接收数据流
+// 4（POST）
+// Sent as the body (message data) of a request is transmitted (such as in an http POST request).
+// POST请求接收数据流
 - (void)connection:(NSURLConnection __unused *)connection
    didSendBodyData:(NSInteger)bytesWritten
  totalBytesWritten:(NSInteger)totalBytesWritten
@@ -822,9 +832,10 @@ totalBytesExpectedToWrite:(NSInteger)totalBytesExpectedToWrite
     });
 }
 
+// 5
 // 当服务端提供了有效的数据来创建NSURLResponse对象时，代理会收到connection:didReceiveResponse:消息。
 // 这个代理方法会检查NSURLResponse对象并确认数据的content-type，MIME类型，文件 名和其它元数据。
-// 需要注意的是，对于单个连接，我们可能会接多次收到connection:didReceiveResponse:消息；这咱情况发生在
+// 需要注意的是，对于单个连接，我们可能会接多次收到connection:didReceiveResponse:消息，这种情况发生在
 // 响应是多重MIME编码的情况下，每次代理接收到connection:didReceiveResponse:时，应该重设进度标识
 // 并丢弃之前接收到的数据。
 - (void)connection:(NSURLConnection __unused *)connection
@@ -834,6 +845,7 @@ didReceiveResponse:(NSURLResponse *)response
     self.response = response;
 }
 
+// 6
 // 代理会定期接收到connection:didReceiveData:消息，该消息用于接收服务端返回的数据实体。该方法负责存储数据。
 // 我们也可以用这个方法提供进度信息，这种情况下，我们需要在connection:didReceiveResponse:方法中
 // 调用响应对象的expectedContentLength方法来获取数据的总长度。
@@ -881,6 +893,24 @@ didReceiveResponse:(NSURLResponse *)response
     });
 }
 
+// 7
+// 该可选方法向委托提供了一种方式来检测与修改协议控制器所缓存的响应
+- (NSCachedURLResponse *)connection:(NSURLConnection *)connection
+                  willCacheResponse:(NSCachedURLResponse *)cachedResponse
+{
+    if (self.cacheResponse) {   // 定义了缓存block
+        return self.cacheResponse(connection, cachedResponse);
+    } else {
+        // 已经取消，nil
+        if ([self isCancelled]) {
+            return nil;
+        }
+        
+        return cachedResponse;
+    }
+}
+
+// 8
 // 加载完成
 - (void)connectionDidFinishLoading:(NSURLConnection __unused *)connection {
     // 从输出流NSOutputStream中取得NSData
@@ -900,6 +930,7 @@ didReceiveResponse:(NSURLResponse *)response
     [self finish];
 }
 
+// 8
 // 失败
 - (void)connection:(NSURLConnection __unused *)connection
   didFailWithError:(NSError *)error
@@ -919,21 +950,6 @@ didReceiveResponse:(NSURLResponse *)response
 
     // 完成后续操作
     [self finish];
-}
-
-// 该可选方法向委托提供了一种方式来检测与修改协议控制器所缓存的响应
-- (NSCachedURLResponse *)connection:(NSURLConnection *)connection
-                  willCacheResponse:(NSCachedURLResponse *)cachedResponse
-{
-    if (self.cacheResponse) {   // 定义了缓存block
-        return self.cacheResponse(connection, cachedResponse);
-    } else {
-        if ([self isCancelled]) {
-            return nil;
-        }
-
-        return cachedResponse;
-    }
 }
 
 #pragma mark - NSSecureCoding

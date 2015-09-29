@@ -58,8 +58,9 @@
     }
 
     self.baseURL = url;
-    // 初始化请求serializer和返回值serializer，并不是单例
+    // 初始化请求serializer，并不是单例
     self.requestSerializer = [AFHTTPRequestSerializer serializer];
+    // 初始化返回值serializer，并不是单例
     self.responseSerializer = [AFJSONResponseSerializer serializer];
     
     self.securityPolicy = [AFSecurityPolicy defaultPolicy];
@@ -78,6 +79,7 @@
 #ifdef _SYSTEMCONFIGURATION_H
 #endif
 
+// 自己设置serializer
 - (void)setRequestSerializer:(AFHTTPRequestSerializer <AFURLRequestSerialization> *)requestSerializer {
     NSParameterAssert(requestSerializer);
 
@@ -92,7 +94,7 @@
 
 #pragma mark -
 
-// 调用AFJSONResponseSerializer的方法配置NSURLRequest
+// 调用AFHTTPResponseSerializer的方法配置NSURLRequest
 - (AFHTTPRequestOperation *)HTTPRequestOperationWithHTTPMethod:(NSString *)method
                                                      URLString:(NSString *)URLString
                                                     parameters:(id)parameters
@@ -100,7 +102,7 @@
                                                        failure:(void (^)(AFHTTPRequestOperation *operation, NSError *error))failure
 {
     NSError *serializationError = nil;
-    // 调用AFJSONResponseSerializer的方法配置NSURLRequest
+    // 调用AFHTTPResponseSerializer的方法配置NSURLRequest
     NSMutableURLRequest *request = [self.requestSerializer requestWithMethod:method URLString:[[NSURL URLWithString:URLString relativeToURL:self.baseURL] absoluteString] parameters:parameters error:&serializationError];
     if (serializationError) {
         if (failure) {

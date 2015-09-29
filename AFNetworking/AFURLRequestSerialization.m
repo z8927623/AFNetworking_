@@ -205,7 +205,7 @@ static NSArray * AFHTTPRequestSerializerObservedKeyPaths() {
     static NSArray *_AFHTTPRequestSerializerObservedKeyPaths = nil;
     static dispatch_once_t onceToken;
     dispatch_once(&onceToken, ^{
-        // 观察allowsCellularAccess、cachePolicy、HTTPShouldHandleCookies、HTTPShouldUsePipelining、networkServiceType、timeoutInterval
+        // 观察allowsCellularAccess、cachePolicy、HTTPShouldHandleCookies、HTTPShouldUsePipelining（管线化）、networkServiceType、timeoutInterval
         _AFHTTPRequestSerializerObservedKeyPaths = @[NSStringFromSelector(@selector(allowsCellularAccess)), NSStringFromSelector(@selector(cachePolicy)), NSStringFromSelector(@selector(HTTPShouldHandleCookies)), NSStringFromSelector(@selector(HTTPShouldUsePipelining)), NSStringFromSelector(@selector(networkServiceType)), NSStringFromSelector(@selector(timeoutInterval))];
     });
 
@@ -251,14 +251,18 @@ static void *AFHTTPRequestSerializerObserverContext = &AFHTTPRequestSerializerOb
         [acceptLanguagesComponents addObject:[NSString stringWithFormat:@"%@;q=%0.1g", obj, q]];
         *stop = q <= 0.5f;
     }];
+    
+    // 初始化设置两个http头，分别是Accept-Language、User-Agent
+    // ****************************** Accept-Language ******************************
     // 设置请求头之Accept-Language
     [self setValue:[acceptLanguagesComponents componentsJoinedByString:@", "] forHTTPHeaderField:@"Accept-Language"];
 
     NSString *userAgent = nil;
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wgnu"
-#if TARGET_OS_IOS
+#if TARGET_OS_IOS   // iOS真机
     // User-Agent Header; see http://www.w3.org/Protocols/rfc2616/rfc2616-sec14.html#sec14.43
+    // 系统信息
     userAgent = [NSString stringWithFormat:@"%@/%@ (%@; iOS %@; Scale/%0.2f)", [[NSBundle mainBundle] infoDictionary][(__bridge NSString *)kCFBundleExecutableKey] ?: [[NSBundle mainBundle] infoDictionary][(__bridge NSString *)kCFBundleIdentifierKey], [[NSBundle mainBundle] infoDictionary][@"CFBundleShortVersionString"] ?: [[NSBundle mainBundle] infoDictionary][(__bridge NSString *)kCFBundleVersionKey], [[UIDevice currentDevice] model], [[UIDevice currentDevice] systemVersion], [[UIScreen mainScreen] scale]];
 #elif TARGET_OS_WATCH
     // User-Agent Header; see http://www.w3.org/Protocols/rfc2616/rfc2616-sec14.html#sec14.43
@@ -274,6 +278,7 @@ static void *AFHTTPRequestSerializerObserverContext = &AFHTTPRequestSerializerOb
                 userAgent = mutableUserAgent;
             }
         }
+        // ****************************** User-Agent ******************************
         // 设置请求头之User-Agent用户代理
         [self setValue:userAgent forHTTPHeaderField:@"User-Agent"];
     }
@@ -354,10 +359,11 @@ static void *AFHTTPRequestSerializerObserverContext = &AFHTTPRequestSerializerOb
     return [NSDictionary dictionaryWithDictionary:self.mutableHTTPRequestHeaders];
 }
 
-// 设置请求头
+// 设置请求头到字典
 - (void)setValue:(NSString *)value
 forHTTPHeaderField:(NSString *)field
 {
+    // 添加到字典
 	[self.mutableHTTPRequestHeaders setValue:value forKey:field];
 }
 
@@ -371,11 +377,15 @@ forHTTPHeaderField:(NSString *)field
                                        password:(NSString *)password
 {
 	NSString *basicAuthCredentials = [NSString stringWithFormat:@"%@:%@", username, password];
+    // ****************************** Authorization ******************************
+    // 认证信息Basic
     [self setValue:[NSString stringWithFormat:@"Basic %@", AFBase64EncodedStringFromString(basicAuthCredentials)] forHTTPHeaderField:@"Authorization"];
 }
 
 // 设置Authorization：token
 - (void)setAuthorizationHeaderFieldWithToken:(NSString *)token {
+    // ****************************** Authorization ******************************
+    // 认证信息token
     [self setValue:[NSString stringWithFormat:@"Token token=\"%@\"", token] forHTTPHeaderField:@"Authorization"];
 }
 
@@ -404,6 +414,7 @@ forHTTPHeaderField:(NSString *)field
     return [self requestWithMethod:method URLString:URLString parameters:parameters error:nil];
 }
 
+// 在AFHTTPRequestOperationManager中调用
 // 普通表单请求
 // Content-Type: application/x-www-form-urlencoded
 - (NSMutableURLRequest *)requestWithMethod:(NSString *)method
@@ -424,6 +435,7 @@ forHTTPHeaderField:(NSString *)field
 
     for (NSString *keyPath in AFHTTPRequestSerializerObservedKeyPaths()) {
         if ([self.mutableObservedChangedKeyPaths containsObject:keyPath]) {
+            // ****************************** ？？？ ******************************
             [mutableRequest setValue:[self valueForKeyPath:keyPath] forKey:keyPath];
         }
     }
@@ -541,6 +553,7 @@ forHTTPHeaderField:(NSString *)field
 }
 
 #pragma mark - AFURLRequestSerialization
+// 这是AFURLRequestSerialization协议方法
 // 设置request的header、body、url等
 - (NSURLRequest *)requestBySerializingRequest:(NSURLRequest *)request
                                withParameters:(id)parameters
@@ -550,15 +563,17 @@ forHTTPHeaderField:(NSString *)field
 
     NSMutableURLRequest *mutableRequest = [request mutableCopy];
 
+    // 设置http头真正方法
     // 枚举头部字典
     [self.HTTPRequestHeaders enumerateKeysAndObjectsUsingBlock:^(id field, id value, BOOL * __unused stop) {
         if (![request valueForHTTPHeaderField:field]) {
+            // ****************************** headers ******************************
             // 设置request的请求头
             [mutableRequest setValue:value forHTTPHeaderField:field];
         }
     }];
 
-    if (parameters) {       // 如果有参数
+    if (parameters) {                        // 如果有参数
         NSString *query = nil;
         if (self.queryStringSerialization) { // 自定义参数处理block
             NSError *serializationError;
@@ -581,17 +596,20 @@ forHTTPHeaderField:(NSString *)field
             }
         }
 
-        // 请求方法为GET、HEAD、DELETE之一
+        // 请求方法为GET、HEAD、DELETE之一则将参数拼接在URL后面
         if ([self.HTTPMethodsEncodingParametersInURI containsObject:[[request HTTPMethod] uppercaseString]]) {
             // 拼接在URL后面
             mutableRequest.URL = [NSURL URLWithString:[[mutableRequest.URL absoluteString] stringByAppendingFormat:mutableRequest.URL.query ? @"&%@" : @"?%@", query]];
-        } else {          // 请求方法为POST等其他请求
+        } else {
+            // 请求方法为POST等其他请求则将参数请放在请求体中并进行编码并添加Content-Type
+            // Content-Type仅在请求为POST且有参数的时候才有
             // 没有设置Content-Type
             if (![mutableRequest valueForHTTPHeaderField:@"Content-Type"]) {
+                // ****************************** Content-Type ******************************
                 // 设置默认为表单类型application/x-www-form-urlencoded
                 [mutableRequest setValue:@"application/x-www-form-urlencoded" forHTTPHeaderField:@"Content-Type"];
             }
-            // 将请求数据放在请求体中
+            // 将参数请放在请求体中并进行编码
             [mutableRequest setHTTPBody:[query dataUsingEncoding:self.stringEncoding]];
         }
     }
@@ -883,9 +901,12 @@ multipart/form-data的请求体也是一个字符串，不过和post的请求体
 
     // 构造headers字典，给AFHTTPBodyPart计算头部长度用
     NSMutableDictionary *mutableHeaders = [NSMutableDictionary dictionary];
+    
+    // ****************************** multipart Content-Disposition ******************************
     // Content-Disposition，name是和服务端匹配的，fileName是自己本地标识数据唯一性的名字
     // "Content-Disposition" = "form-data; name=\"file\"; filename=\"d95ba1db72ffb017ab88942a68544e12\"";
     [mutableHeaders setValue:[NSString stringWithFormat:@"form-data; name=\"%@\"; filename=\"%@\"", name, fileName] forKey:@"Content-Disposition"];
+    // ****************************** multipart Content-Type ******************************
     // multipart必须包含一个特殊的头信息：Content-Type
     // "Content-Type" = "image/jpeg";
     [mutableHeaders setValue:mimeType forKey:@"Content-Type"];
@@ -929,7 +950,9 @@ multipart/form-data的请求体也是一个字符串，不过和post的请求体
 
     // 构造headers字典，给AFHTTPBodyPart计算头部长度用
     NSMutableDictionary *mutableHeaders = [NSMutableDictionary dictionary];
+    // ****************************** multipart Content-Disposition ******************************
     [mutableHeaders setValue:[NSString stringWithFormat:@"form-data; name=\"%@\"; filename=\"%@\"", name, fileName] forKey:@"Content-Disposition"];
+    // ****************************** multipart Content-Type ******************************
     [mutableHeaders setValue:mimeType forKey:@"Content-Type"];
 
     // 构造AFHTTPBodyPart
@@ -963,8 +986,10 @@ multipart/form-data的请求体也是一个字符串，不过和post的请求体
 
     // 构造headers字典，给AFHTTPBodyPart计算头部长度用
     NSMutableDictionary *mutableHeaders = [NSMutableDictionary dictionary];
+    // ****************************** multipart Content-Disposition ******************************
     // "Content-Disposition" = "form-data; name=\"file\"; filename=\"d95ba1db72ffb017ab88942a68544e12\"";
     [mutableHeaders setValue:[NSString stringWithFormat:@"form-data; name=\"%@\"; filename=\"%@\"", name, fileName] forKey:@"Content-Disposition"];
+    // ****************************** multipart Content-Type ******************************
     // "Content-Type" = "image/jpeg";
     [mutableHeaders setValue:mimeType forKey:@"Content-Type"];
 
@@ -982,7 +1007,7 @@ multipart/form-data的请求体也是一个字符串，不过和post的请求体
 
     // 构造headers字典，给AFHTTPBodyPart计算头部长度用
     NSMutableDictionary *mutableHeaders = [NSMutableDictionary dictionary];
-    // 没有filename
+    // ****************************** Content-Disposition ******************************
     [mutableHeaders setValue:[NSString stringWithFormat:@"form-data; name=\"%@\"", name] forKey:@"Content-Disposition"];
     
     // 没有Content-Type
@@ -1036,9 +1061,9 @@ multipart/form-data的请求体也是一个字符串，不过和post的请求体
     [self.request setHTTPBodyStream:self.bodyStream];
     
     // 设置http请求头
-    // 设置Content-Type
+    // ****************************** multipart Content-Type ******************************
     [self.request setValue:[NSString stringWithFormat:@"multipart/form-data; boundary=%@", self.boundary] forHTTPHeaderField:@"Content-Type"];
-    // 设置Content-Length
+    // ****************************** multipart Content-Length ******************************
     [self.request setValue:[NSString stringWithFormat:@"%llu", [self.bodyStream contentLength]] forHTTPHeaderField:@"Content-Length"];
 
     return self.request;
@@ -1493,6 +1518,7 @@ typedef enum {
 
 + (instancetype)serializerWithWritingOptions:(NSJSONWritingOptions)writingOptions
 {
+    // 类方法里初始化
     AFJSONRequestSerializer *serializer = [[self alloc] init];
     serializer.writingOptions = writingOptions;
 
@@ -1500,7 +1526,7 @@ typedef enum {
 }
 
 #pragma mark - AFURLRequestSerialization
-
+// 这是AFURLRequestSerialization协议方法
 - (NSURLRequest *)requestBySerializingRequest:(NSURLRequest *)request
                                withParameters:(id)parameters
                                         error:(NSError *__autoreleasing *)error
@@ -1508,24 +1534,27 @@ typedef enum {
     NSParameterAssert(request);
 
     if ([self.HTTPMethodsEncodingParametersInURI containsObject:[[request HTTPMethod] uppercaseString]]) {
+        // 调用super
         return [super requestBySerializingRequest:request withParameters:parameters error:error];
     }
 
     NSMutableURLRequest *mutableRequest = [request mutableCopy];
 
-    // 设置http请求头
+    // 设置http头真正方法
     [self.HTTPRequestHeaders enumerateKeysAndObjectsUsingBlock:^(id field, id value, BOOL * __unused stop) {
         if (![request valueForHTTPHeaderField:field]) {
+            // ****************************** Http Header ******************************
             [mutableRequest setValue:value forHTTPHeaderField:field];
         }
     }];
 
     if (parameters) {
         if (![mutableRequest valueForHTTPHeaderField:@"Content-Type"]) {
-            // 设置Content-Type为application/json
+            // ****************************** Content-Type ******************************
+            // 设置Content-Type为"application/json"
             [mutableRequest setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
         }
-        // 设置http请求体
+        // 设置http请求体，编码成JSON
         [mutableRequest setHTTPBody:[NSJSONSerialization dataWithJSONObject:parameters options:self.writingOptions error:error]];
     }
 
@@ -1582,8 +1611,8 @@ typedef enum {
     return serializer;
 }
 
-#pragma mark - AFURLRequestSerializer
-
+#pragma mark - AFURLRequestSerialization
+// 这是AFURLRequestSerialization协议方法
 - (NSURLRequest *)requestBySerializingRequest:(NSURLRequest *)request
                                withParameters:(id)parameters
                                         error:(NSError *__autoreleasing *)error
@@ -1595,19 +1624,21 @@ typedef enum {
     }
 
     NSMutableURLRequest *mutableRequest = [request mutableCopy];
-    // 设置http请求头
+    // 设置http头真正方法
     [self.HTTPRequestHeaders enumerateKeysAndObjectsUsingBlock:^(id field, id value, BOOL * __unused stop) {
         if (![request valueForHTTPHeaderField:field]) {
+            // ****************************** Http Header ******************************
             [mutableRequest setValue:value forHTTPHeaderField:field];
         }
     }];
 
     if (parameters) {
         if (![mutableRequest valueForHTTPHeaderField:@"Content-Type"]) {
+            // ****************************** Content-Type ******************************
             // 设置Content-Type为application/x-plist
             [mutableRequest setValue:@"application/x-plist" forHTTPHeaderField:@"Content-Type"];
         }
-        // 设置http请求体
+        // 设置http请求体，编码成属性列表
         [mutableRequest setHTTPBody:[NSPropertyListSerialization dataWithPropertyList:parameters format:self.format options:self.writeOptions error:error]];
     }
 

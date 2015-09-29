@@ -30,7 +30,7 @@ NS_ASSUME_NONNULL_BEGIN
  For example, a JSON response serializer may check for an acceptable status code (`2XX` range) and content type (`application/json`), decoding a valid JSON response into an object.
  */
 
-// 定义协议
+// 定义AFURLResponseSerialization协议
 @protocol AFURLResponseSerialization <NSObject, NSSecureCoding, NSCopying>
 
 /**

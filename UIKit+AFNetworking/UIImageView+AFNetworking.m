@@ -126,7 +126,7 @@
 {
     // 生成NSURLRequest
     NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:url];
-    // 设置HTTP header
+    // 设置HTTP header（可处理的媒体类型）
     [request addValue:@"image/*" forHTTPHeaderField:@"Accept"];
 
     [self setImageWithURLRequest:request placeholderImage:placeholderImage success:nil failure:nil];
@@ -159,8 +159,10 @@
             // 先设置placeholderImage
             self.image = placeholderImage;
         }
-
+        
         __weak __typeof(self)weakSelf = self;
+        
+        // 自己生成NSOperation并添加到队列，而不是通过AFHTTPRequestOperationManager来下载，绕过了通过AFHTTPResponseSerializer来配置NSURLRequst
         // 初始化AFHTTPRequestOperation
         self.af_imageRequestOperation = [[AFHTTPRequestOperation alloc] initWithRequest:urlRequest];
         self.af_imageRequestOperation.responseSerializer = self.imageResponseSerializer;
@@ -176,7 +178,7 @@
                 }
 
                 if (operation == strongSelf.af_imageRequestOperation){
-                        strongSelf.af_imageRequestOperation = nil;
+                    strongSelf.af_imageRequestOperation = nil;
                 }
             }
             // 缓存图片，key为URL
@@ -190,7 +192,7 @@
                 }
 
                 if (operation == strongSelf.af_imageRequestOperation){
-                        strongSelf.af_imageRequestOperation = nil;
+                    strongSelf.af_imageRequestOperation = nil;
                 }
             }
         }];

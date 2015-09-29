@@ -33,6 +33,7 @@ NS_ASSUME_NONNULL_BEGIN
 
  For example, a JSON request serializer may set the HTTP body of the request to a JSON representation, and set the `Content-Type` HTTP header field value to `application/json`.
  */
+// AFURLRequestSerialization协议
 @protocol AFURLRequestSerialization <NSObject, NSSecureCoding, NSCopying>
 
 /**
